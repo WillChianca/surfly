@@ -1,0 +1,6 @@
+# Local verification output; never used as production forecast data.
+tmp/
+DerivedData/
+__pycache__/
+*.pyc
+.DS_Store

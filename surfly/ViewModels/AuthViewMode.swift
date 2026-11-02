@@ -12,10 +12,12 @@ class AuthViewModel: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var isLoading: Bool = false
     
-    init() {
+    init(preview: Bool = false) {
+        guard !preview, ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != "1" else { return }
         if let user = Auth.auth().currentUser {
              self.isAuthenticated = true
              self.currentUserEmail = user.email
+             self.currentUserName = user.displayName ?? user.email?.components(separatedBy: "@").first?.capitalized ?? "Surfista"
         }
     }
     
@@ -28,13 +30,15 @@ class AuthViewModel: ObservableObject {
         
         isLoading = true
         
-        // Simulação de rede (Substituir por Auth.auth().signIn(withEmail: email, password: password))
-        try? await Auth.auth().signIn(withEmail: email, password: password)
-        
-        self.currentUserEmail = email
-        self.currentUserName = email.components(separatedBy: "@").first?.capitalized ?? "Surfista"
-        self.isAuthenticated = true
-        self.isLoading = false
+        defer { isLoading = false }
+        do {
+            let result = try await Auth.auth().signIn(withEmail: email, password: password)
+            currentUserEmail = result.user.email
+            currentUserName = result.user.displayName ?? email.components(separatedBy: "@").first?.capitalized ?? "Surfista"
+            isAuthenticated = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
     
     func register(name: String, email: String, password: String, confirmPassword: String) async {
@@ -54,19 +58,30 @@ class AuthViewModel: ObservableObject {
         
         isLoading = true
         
-        // Simulação de rede (Substituir por Auth.auth().createUser(withEmail: email, password: password))
-        try? await Auth.auth().createUser(withEmail: email, password: password)
-        
-        self.currentUserName = name
-        self.currentUserEmail = email
-        self.isAuthenticated = true
-        self.isLoading = false
+        defer { isLoading = false }
+        do {
+            let result = try await Auth.auth().createUser(withEmail: email, password: password)
+            let profile = result.user.createProfileChangeRequest()
+            profile.displayName = name
+            do { try await profile.commitChanges() }
+            catch { errorMessage = "Conta criada, mas não foi possível guardar o nome: \(error.localizedDescription)" }
+            currentUserName = result.user.displayName ?? name
+            currentUserEmail = result.user.email
+            isAuthenticated = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
     
     func signOut() {
-        // try? Auth.auth().signOut()
-        self.isAuthenticated = false
-        self.currentUserEmail = nil
+        do {
+            try Auth.auth().signOut()
+            isAuthenticated = false
+            currentUserEmail = nil
+            currentUserName = "Surfista"
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
     
     var userInitials: String {

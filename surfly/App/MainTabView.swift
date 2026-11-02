@@ -15,7 +15,7 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             // TAB 1: Forecast (Home) - Público
-            Text("Forecast Home (Próximo Passo)")
+            ForecastHomeView()
                 .tabItem {
                     Label("Forecast", systemImage: "water.waves")
                 }

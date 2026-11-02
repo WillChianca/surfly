@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        C0DEC0013096606F0087745A /* FirebaseAILogic in Frameworks */ = {isa = PBXBuildFile; productRef = C0DEC0033096606F0087745A /* FirebaseAILogic */; };
+        C0DEC0023096606F0087745A /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = C0DEC0043096606F0087745A /* FirebaseAppCheck */; };
 		BEA815473096606F0087745A /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = BEA815463096606F0087745A /* FirebaseAuth */; };
 		BEA815493096606F0087745A /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = BEA815483096606F0087745A /* FirebaseCore */; };
 /* End PBXBuildFile section */
@@ -58,6 +60,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				BEA815493096606F0087745A /* FirebaseCore in Frameworks */,
+                C0DEC0013096606F0087745A /* FirebaseAILogic in Frameworks */,
+                C0DEC0023096606F0087745A /* FirebaseAppCheck in Frameworks */,
 				BEA815473096606F0087745A /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -121,6 +125,8 @@
 			packageProductDependencies = (
 				BEA815463096606F0087745A /* FirebaseAuth */,
 				BEA815483096606F0087745A /* FirebaseCore */,
+                C0DEC0033096606F0087745A /* FirebaseAILogic */,
+                C0DEC0043096606F0087745A /* FirebaseAppCheck */,
 			);
 			productName = surfly;
 			productReference = BEB8C3ED308F0296005A963C /* surfly.app */;
@@ -409,7 +415,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Surfly uses your location to find the closest listed surf beach and calculate its distance.";
+                INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Surfly adds the surf lessons and reminders you choose to your calendar.";
+                INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -440,7 +448,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Surfly uses your location to find the closest listed surf beach and calculate its distance.";
+                INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Surfly adds the surf lessons and reminders you choose to your calendar.";
+                INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -595,6 +605,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+        C0DEC0033096606F0087745A /* FirebaseAILogic */ = {
+            isa = XCSwiftPackageProductDependency;
+            package = BEA815453096606F0087745A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+            productName = FirebaseAILogic;
+        };
+        C0DEC0043096606F0087745A /* FirebaseAppCheck */ = {
+            isa = XCSwiftPackageProductDependency;
+            package = BEA815453096606F0087745A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+            productName = FirebaseAppCheck;
+        };
 		BEA815463096606F0087745A /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = BEA815453096606F0087745A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
