@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		BEA815473096606F0087745A /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = BEA815463096606F0087745A /* FirebaseAuth */; };
+		BEA815493096606F0087745A /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = BEA815483096606F0087745A /* FirebaseCore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		BEB8C3FD308F029B005A963C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BEA815493096606F0087745A /* FirebaseCore in Frameworks */,
+				BEA815473096606F0087745A /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +119,8 @@
 			);
 			name = surfly;
 			packageProductDependencies = (
+				BEA815463096606F0087745A /* FirebaseAuth */,
+				BEA815483096606F0087745A /* FirebaseCore */,
 			);
 			productName = surfly;
 			productReference = BEB8C3ED308F0296005A963C /* surfly.app */;
@@ -195,6 +204,9 @@
 			);
 			mainGroup = BEB8C3E4308F0296005A963C;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				BEA815453096606F0087745A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BEB8C3EE308F0296005A963C /* Products */;
 			projectDirPath = "";
@@ -570,6 +582,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		BEA815453096606F0087745A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 13.1.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BEA815463096606F0087745A /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BEA815453096606F0087745A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		BEA815483096606F0087745A /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BEA815453096606F0087745A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = BEB8C3E5308F0296005A963C /* Project object */;
 }

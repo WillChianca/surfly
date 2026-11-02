@@ -1,9 +1,11 @@
 import Foundation
+import Combine
 import SwiftUI
-// import FirebaseAuth // Descomentar após adicionar o pacote Firebase no Xcode
+import FirebaseAuth
 
 @MainActor
 class AuthViewModel: ObservableObject {
+    
     @Published var isAuthenticated: Bool = false
     @Published var currentUserEmail: String? = nil
     @Published var currentUserName: String = "Surfista"
@@ -11,11 +13,10 @@ class AuthViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     
     init() {
-        // Quando o Firebase estiver ativo:
-        // if let user = Auth.auth().currentUser {
-        //     self.isAuthenticated = true
-        //     self.currentUserEmail = user.email
-        // }
+        if let user = Auth.auth().currentUser {
+             self.isAuthenticated = true
+             self.currentUserEmail = user.email
+        }
     }
     
     func signIn(email: String, password: String) async {
@@ -28,7 +29,7 @@ class AuthViewModel: ObservableObject {
         isLoading = true
         
         // Simulação de rede (Substituir por Auth.auth().signIn(withEmail: email, password: password))
-        try? await Task.sleep(nanoseconds: 800_000_000)
+        try? await Auth.auth().signIn(withEmail: email, password: password)
         
         self.currentUserEmail = email
         self.currentUserName = email.components(separatedBy: "@").first?.capitalized ?? "Surfista"
@@ -54,7 +55,7 @@ class AuthViewModel: ObservableObject {
         isLoading = true
         
         // Simulação de rede (Substituir por Auth.auth().createUser(withEmail: email, password: password))
-        try? await Task.sleep(nanoseconds: 800_000_000)
+        try? await Auth.auth().createUser(withEmail: email, password: password)
         
         self.currentUserName = name
         self.currentUserEmail = email
