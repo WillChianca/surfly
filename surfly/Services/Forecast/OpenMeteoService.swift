@@ -1,13 +1,14 @@
 import Foundation
 
 enum ForecastError: LocalizedError {
-    case server(Int), invalidResponse, noData
+    case server(Int), invalidResponse, noData, inlandLocation
     var errorDescription: String? {
         switch self {
         case .server(429): "The forecast provider is busy. Please try again shortly."
         case .server: "The forecast provider could not complete this request."
         case .invalidResponse: "The forecast response could not be read."
         case .noData: "No forecast data is available for this beach."
+        case .inlandLocation: "No nearby marine grid is available. Choose a coastal beach or move the pin closer to the sea."
         }
     }
 }
@@ -39,7 +40,7 @@ final class OpenMeteoService {
             .init(name: "latitude", value: String(beach.latitude)),
             .init(name: "longitude", value: String(beach.longitude)),
             .init(name: "forecast_days", value: "7"),
-            .init(name: "timezone", value: "Europe/Lisbon"),
+            .init(name: "timezone", value: "auto"),
             .init(name: "timeformat", value: "unixtime"),
             .init(name: "hourly", value: marine
                 ? "wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_period,swell_wave_direction,sea_surface_temperature"
@@ -104,9 +105,15 @@ final class OpenMeteoService {
                 isDay: value(weather, "is_day", wi) == 1)
         }.sorted { $0.time < $1.time }
         guard !hours.isEmpty else { throw ForecastError.noData }
-        return BeachForecast(beach: beach, hours: hours,
+        let grid = SurfBeach(id: "grid", name: "", region: "", latitude: marine.latitude,
+                             longitude: marine.longitude, seawardBearing: nil)
+        guard grid.location.distance(from: beach.location) <= 50_000 else { throw ForecastError.inlandLocation }
+        var resolvedBeach = beach
+        resolvedBeach.timeZoneIdentifier = weather.timezone ?? beach.timeZone.identifier
+        return BeachForecast(beach: resolvedBeach, hours: hours,
                              sunsets: (weather.daily?["sunset"] ?? []).compactMap { $0.map { Date(timeIntervalSince1970: $0) } },
-                             fetchedAt: fetchedAt, marineLatitude: marine.latitude, marineLongitude: marine.longitude)
+                             fetchedAt: fetchedAt, marineLatitude: marine.latitude, marineLongitude: marine.longitude,
+                             timeZoneIdentifier: resolvedBeach.timeZone.identifier)
     }
 }
 
@@ -116,4 +123,5 @@ struct OpenMeteoResponse: Decodable {
     let hourly_units: [String: String]
     let hourly: [String: [Double?]]
     let daily: [String: [Double?]]?
+    var timezone: String? = nil
 }

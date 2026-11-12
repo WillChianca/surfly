@@ -25,6 +25,7 @@ struct surflyApp: App {
     var body: some Scene {
         WindowGroup {
             MainTabView()
+                .modelContainer(for: SurfLesson.self)
         }
     }
 }

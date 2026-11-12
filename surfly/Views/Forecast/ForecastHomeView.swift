@@ -1,16 +1,20 @@
 import SwiftUI
 import CoreLocation
+import SwiftData
 
 struct ForecastHomeView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = ForecastViewModel()
-    @StateObject private var location = BeachLocationService()
+    @EnvironmentObject private var location: BeachLocationService
+    @EnvironmentObject private var selection: BeachSelectionStore
+    @AppStorage("distanceUnit") private var distanceUnit = "km"
+    @AppStorage("aiEnabled") private var aiEnabled = true
+    var onExploreMap: () -> Void = { }
     @State private var showBeaches = false
     @State private var showLogin = false
     @State private var showLesson = false
     @State private var showSources = false
-    @State private var followsLocation = true
     @State private var calendarConfirmation = false
     @State private var lessonAfterLogin = false
 
@@ -19,8 +23,11 @@ struct ForecastHomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
-                    if let message = location.message {
+                    if let message = location.message ?? selection.message {
                         Text(message).font(.caption).foregroundStyle(SurflyTheme.mutedText)
+                    }
+                    if location.isApproximate, location.location != nil {
+                        Text("Approximate location · distances are approximate").font(.caption2).foregroundStyle(SurflyTheme.mutedText)
                     }
                     daySelector
                     if model.isLoading {
@@ -45,9 +52,9 @@ struct ForecastHomeView: View {
                         .buttonStyle(ForecastPrimaryButton())
                         sourcesFooter
                     } else {
-                        statusCard(title: location.isLocating ? "Finding your beach…" : "Find your forecast",
-                                   message: "Choose a beach or use your location to find the closest beach in our regional catalogue.",
-                                   loading: location.isLocating)
+                        statusCard(title: location.isLocating || selection.findingNearest ? "Finding your beach…" : "Find your forecast",
+                                   message: "Search a coastal beach anywhere, choose a point on the map, or find nearby beaches with your location.",
+                                   loading: location.isLocating || selection.findingNearest)
                         Button("Choose a beach") { showBeaches = true }.buttonStyle(ForecastPrimaryButton())
                     }
                 }
@@ -61,7 +68,6 @@ struct ForecastHomeView: View {
             .refreshable { await model.load(refresh: true) }
             .task {
                 guard ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != "1" else { return }
-                location.request()
                 while !Task.isCancelled {
                     do { try await Task.sleep(for: .seconds(60)) } catch { return }
                     if let fetched = model.forecast?.fetchedAt, Date().timeIntervalSince(fetched) >= 900,
@@ -72,17 +78,18 @@ struct ForecastHomeView: View {
                     }
                 }
             }
-            .task(id: "\(model.beach?.id ?? "none")-\(model.refreshID)") { await model.load() }
-            .onChange(of: location.location) { _, fix in
-                if followsLocation, let fix { model.chooseNearest(to: fix) }
+            .task(id: "\(selection.selected?.id ?? "none")-\(model.refreshID)") {
+                model.beach = selection.selected
+                await model.load()
             }
+            .onChange(of: aiEnabled) { _, _ in model.updateAdvice() }
             .onChange(of: model.selectedDay) { _, _ in model.updateAdvice() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active, let fetched = model.forecast?.fetchedAt, Date().timeIntervalSince(fetched) >= 900 {
                     model.refreshID = UUID()
                 }
             }
-            .sheet(isPresented: $showBeaches) { beachPicker }
+            .sheet(isPresented: $showBeaches) { BeachSearchView(onExploreMap: onExploreMap) }
             .sheet(isPresented: $showLogin, onDismiss: {
                 if lessonAfterLogin && auth.isAuthenticated { showLesson = true }
                 lessonAfterLogin = false
@@ -96,7 +103,7 @@ struct ForecastHomeView: View {
             .sheet(isPresented: $showSources) { ForecastSourcesView(forecast: model.forecast) }
             .alert("Lesson saved", isPresented: $calendarConfirmation) {
                 Button("Done", role: .cancel) { }
-            } message: { Text("Your lesson and reminder were added to Apple Calendar.") }
+            } message: { Text("Your lesson is saved in My Schedule. Open it to see its Calendar sync status.") }
         }
         .tint(SurflyTheme.forecastTeal)
         .preferredColorScheme(.light)
@@ -107,31 +114,21 @@ struct ForecastHomeView: View {
             Image(systemName: "water.waves").font(.title2).foregroundStyle(SurflyTheme.forecastTeal)
             Button { showBeaches = true } label: {
                 VStack(alignment: .leading, spacing: 3) {
-                    Label(followsLocation && location.location != nil ? "Closest listed beach" : "Selected beach", systemImage: "location.fill")
+                    Label(selection.followsLocation && location.location != nil ? "Closest beach found" : "Selected beach", systemImage: "location.fill")
                         .font(.caption2).foregroundStyle(SurflyTheme.mutedText)
                     Text(model.beach.map { "\($0.name) / \($0.region)" } ?? "Choose your beach")
                         .font(.subheadline.weight(.semibold)).foregroundStyle(SurflyTheme.darkSlate)
                         .multilineTextAlignment(.leading)
                     if let fix = location.location, let beach = model.beach {
-                        Text(String(format: "%.1f km · straight-line distance", fix.distance(from: beach.location) / 1000))
+                        Text(AppSettings.distance(fix.distance(from: beach.location), unit: distanceUnit) + " · straight-line distance")
                             .font(.caption2).foregroundStyle(SurflyTheme.mutedText)
                     } else {
-                        Text("Portugal · West coast").font(.caption2).foregroundStyle(SurflyTheme.mutedText)
+                        Text(model.beach?.region ?? "Search beaches worldwide").font(.caption2).foregroundStyle(SurflyTheme.mutedText)
                     }
                 }
             }.buttonStyle(.plain)
             Spacer(minLength: 0)
-            if auth.isAuthenticated {
-                Text(auth.userInitials)
-                    .font(.caption.weight(.semibold)).foregroundStyle(SurflyTheme.forecastTeal)
-                    .frame(width: 42, height: 42).background(SurflyTheme.warmSand, in: Circle())
-                    .accessibilityLabel(auth.currentUserName)
-            } else {
-                Button { showLogin = true } label: {
-                    Image(systemName: "person").font(.subheadline.weight(.semibold))
-                        .frame(width: 44, height: 44).background(SurflyTheme.warmSand, in: Circle())
-                }.accessibilityLabel("Sign in")
-            }
+            ProfileButton()
         }
     }
 
@@ -139,18 +136,18 @@ struct ForecastHomeView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(model.days, id: \.self) { day in
-                    let selected = ForecastClock.calendar.isDate(day, inSameDayAs: model.selectedDay)
+                    let selected = model.calendar.isDate(day, inSameDayAs: model.selectedDay)
                     Button { model.selectedDay = day } label: {
                         VStack(spacing: 5) {
-                            Text(ForecastClock.text(day, format: "EEE")).font(.caption)
-                            Text(ForecastClock.text(day, format: "d")).font(.headline)
+                            Text(ForecastClock.text(day, format: "EEE", timeZone: model.timeZone)).font(.caption)
+                            Text(ForecastClock.text(day, format: "d", timeZone: model.timeZone)).font(.headline)
                         }
                         .foregroundStyle(selected ? .white : SurflyTheme.darkSlate)
                         .frame(width: 58, height: 58)
                         .background(selected ? SurflyTheme.darkSlate : .white, in: RoundedRectangle(cornerRadius: 16))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(ForecastClock.text(day, format: "EEEE d MMMM"))
+                    .accessibilityLabel(ForecastClock.text(day, format: "EEEE d MMMM", timeZone: model.timeZone))
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
@@ -176,7 +173,7 @@ struct ForecastHomeView: View {
                 VStack(alignment: .leading, spacing: 16) { metrics }
             }
             if let hour = model.displayHour {
-                Text("Forecast for \(ForecastClock.text(hour.time, format: "EEE d MMM · HH:mm")) · Lisbon time")
+                Text("Forecast for \(ForecastClock.text(hour.time, format: "EEE d MMM · HH:mm", timeZone: model.timeZone)) · \(model.timeZone.identifier)")
                     .font(.caption2).foregroundStyle(.white.opacity(0.85))
             }
         }
@@ -283,13 +280,12 @@ struct ForecastHomeView: View {
 
     @ViewBuilder private var nearbyCard: some View {
         if let better = model.betterSpot, let beach = model.beach {
-            Button { followsLocation = false; model.beach = better.beach } label: {
+            Button { selection.select(better.beach) } label: {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "mappin.and.ellipse").foregroundStyle(SurflyTheme.accentCoralText)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Better Spot Nearby: \(better.beach.name)").font(.caption.weight(.semibold))
-                        Text(String(format: "%.1f km from %@ · a higher computed score in the same window.",
-                                    beach.location.distance(from: better.beach.location) / 1000, beach.name))
+                        Text("\(AppSettings.distance(beach.location.distance(from: better.beach.location), unit: distanceUnit)) from \(beach.name) · a higher computed score in the same window.")
                             .font(.caption)
                     }
                     Spacer(minLength: 0)
@@ -307,7 +303,7 @@ struct ForecastHomeView: View {
     private var sourcesFooter: some View {
         VStack(alignment: .leading, spacing: 7) {
             if let forecast = model.forecast {
-                Text("Retrieved \(ForecastClock.text(forecast.fetchedAt, format: "d MMM · HH:mm")) · Lisbon time")
+                Text("Retrieved \(ForecastClock.text(forecast.fetchedAt, format: "d MMM · HH:mm", timeZone: model.timeZone)) · \(model.timeZone.identifier)")
             }
             Text("Model forecasts, not beach observations. The score is an experimental planning index; check local conditions with an instructor.")
             Button("Open-Meteo & model providers · Data and score details") { showSources = true }
@@ -323,37 +319,6 @@ struct ForecastHomeView: View {
             .background(.white, in: RoundedRectangle(cornerRadius: 22))
     }
 
-    private var beachPicker: some View {
-        NavigationStack {
-            List {
-                Button {
-                    followsLocation = true
-                    location.request()
-                    showBeaches = false
-                } label: { Label("Use my location", systemImage: "location") }
-                Section("Regional beach catalogue") {
-                    ForEach(SurfBeach.catalogue) { beach in
-                        Button {
-                            followsLocation = false
-                            model.beach = beach
-                            showBeaches = false
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(beach.name).foregroundStyle(SurflyTheme.darkSlate)
-                                    Text(beach.region).font(.caption).foregroundStyle(SurflyTheme.mutedText)
-                                }
-                                Spacer()
-                                if beach.id == model.beach?.id { Image(systemName: "checkmark") }
-                            }.padding(.vertical, 4)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Choose a beach")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showBeaches = false } } }
-        }.presentationDragIndicator(.visible)
-    }
 }
 
 struct ForecastPrimaryButton: ButtonStyle {
@@ -381,6 +346,7 @@ private struct ForecastSourcesView: View {
                     Text("Wave height is significant offshore model height. Body-height labels are approximate; they do not predict the size of breaking waves at this beach. Sea-surface temperature is modelled, not a thermometer reading.")
                 }
                 Section("Beginner index · experimental v1") {
+                    Text("For beaches without a verified shore orientation, wind is shown by compass direction and no onshore adjustment is applied. A pin on the map does not verify that a beach is suitable for surfing.")
                     Text("Weighted score: wave height 60%, wind speed 25%, wave period 15%. Onshore wind can reduce the score. Large waves, strong wind/gusts or energetic swell cap it at 25%. Missing required values mean no score.")
                     Text("These are product rules, not a validated probability of safety. Tides, currents, seabed, crowds, beach flags and lifeguard coverage are not evaluated. Local instruction is essential.")
                     Text("A two-hour window needs three consecutive daytime samples, all scoring at least 60, ending before sunset. Nearby suggestions require an improvement of at least 10 points at matching timestamps, within 25 km of the selected beach.")
@@ -398,5 +364,5 @@ private struct ForecastSourcesView: View {
 
 #Preview {
     // No fabricated forecast fixtures. The initial view contains only the empty/loading state.
-    ForecastHomeView().environmentObject(AuthViewModel(preview: true))
+    MainTabView().modelContainer(for: SurfLesson.self, inMemory: true)
 }

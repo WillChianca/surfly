@@ -6,6 +6,7 @@ Run: python scripts/verify_live_forecast.py
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import argparse
 import json
 from pathlib import Path
 import re
@@ -27,7 +28,7 @@ def probe(beach):
         marine = kind == "marine"
         base = "https://marine-api.open-meteo.com/v1/marine" if marine else "https://api.open-meteo.com/v1/forecast"
         query = dict(latitude=latitude, longitude=longitude, forecast_days=7,
-                     timezone="Europe/Lisbon", timeformat="unixtime", hourly=fields[kind])
+                     timezone="auto", timeformat="unixtime", hourly=fields[kind])
         query.update(dict(cell_selection="sea") if marine else dict(wind_speed_unit="kmh", daily="sunset"))
         url = base + "?" + urlencode(query)
         with urlopen(url, timeout=35) as response:
@@ -37,7 +38,7 @@ def probe(beach):
         times = data["hourly"]["time"]
         assert len(times) >= 7 * 24, (beach_id, kind, "short forecast", len(times))
         assert times == sorted(set(times)), (beach_id, kind, "unordered/duplicate timestamps")
-        assert data["timezone"] == "Europe/Lisbon"
+        assert data.get("timezone") and data["timezone"] != "auto", "Provider must resolve the timezone"
         for field in fields[kind].split(","):
             assert len(data["hourly"][field]) == len(times), (beach_id, field, "misaligned array")
         units = data["hourly_units"]
@@ -46,11 +47,13 @@ def probe(beach):
         assert all(units.get(key) == value for key, value in expected.items()), (beach_id, units)
         payloads[kind] = data
     m, w = payloads["marine"], payloads["weather"]
+    assert m["timezone"] == w["timezone"], (beach_id, "timezone mismatch")
     matching = set(m["hourly"]["time"]) & set(w["hourly"]["time"])
     assert len(matching) >= 168, (beach_id, "not enough matching hours")
     assert len(w["daily"]["sunset"]) == 7
     return {
         "beach": beach_id, "matching_hours": len(matching),
+        "timezone": w["timezone"],
         "first_utc": datetime.fromtimestamp(min(matching), timezone.utc).isoformat(),
         "last_utc": datetime.fromtimestamp(max(matching), timezone.utc).isoformat(),
         "water_temperature_available_hours": sum(v is not None for v in m["hourly"]["sea_surface_temperature"]),
@@ -59,9 +62,14 @@ def probe(beach):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--global-probes", action="store_true", help="Also test coastal coordinates east and west of UTC; these are test inputs, not app catalogue entries")
+    args = parser.parse_args()
     source = (ROOT / "surfly" / "Models" / "Forecast.swift").read_text(encoding="utf-8")
     beaches = re.findall(r'\.init\(id: "([^"]+)"[^\n]*latitude: ([\d.-]+), longitude: ([\d.-]+)', source)
     assert len(beaches) == 5, "Expected the five documented catalogue beaches"
+    if args.global_probes:
+        beaches += [("sydney-coastal-probe", "-33.891", "151.277"), ("honolulu-coastal-probe", "21.27", "-157.84")]
     OUT.mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(max_workers=3) as pool:
         results = list(pool.map(probe, beaches))

@@ -1,14 +1,18 @@
 import Foundation
 import CoreLocation
 
-struct SurfBeach: Identifiable, Hashable {
+struct SurfBeach: Identifiable, Hashable, Codable {
     let id: String
     let name: String
     let region: String
     let latitude: Double
     let longitude: Double
     /// Approximate seaward bearing; local geography, never a forecast observation.
-    let seawardBearing: Double
+    let seawardBearing: Double?
+    var timeZoneIdentifier: String? = nil
+    var source: String = "ABAAE beach catalogue"
+
+    var timeZone: TimeZone { timeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current }
 
     var location: CLLocation { CLLocation(latitude: latitude, longitude: longitude) }
     var coordinate: CLLocationCoordinate2D { location.coordinate }
@@ -16,11 +20,11 @@ struct SurfBeach: Identifiable, Hashable {
     // Regional catalogue of beach reference points, not device positions or marine grid cells.
     // Sources and precision are documented in docs/FORECAST_HOME.md.
     static let catalogue: [SurfBeach] = [
-        .init(id: "baleal-norte", name: "Baleal Norte", region: "Peniche", latitude: 39.373654, longitude: -9.338815, seawardBearing: 315),
-        .init(id: "baleal-sul", name: "Baleal Sul", region: "Peniche", latitude: 39.370671, longitude: -9.338611, seawardBearing: 240),
-        .init(id: "cova-alfarroba", name: "Cova da Alfarroba", region: "Peniche", latitude: 39.360483, longitude: -9.364042, seawardBearing: 330),
-        .init(id: "supertubos", name: "Supertubos", region: "Peniche", latitude: 39.345665, longitude: -9.36355, seawardBearing: 230),
-        .init(id: "nazare", name: "Praia da Nazaré", region: "Nazaré", latitude: 39.599023, longitude: -9.070031, seawardBearing: 270)
+        .init(id: "baleal-norte", name: "Baleal Norte", region: "Peniche", latitude: 39.373654, longitude: -9.338815, seawardBearing: 315, timeZoneIdentifier: "Europe/Lisbon"),
+        .init(id: "baleal-sul", name: "Baleal Sul", region: "Peniche", latitude: 39.370671, longitude: -9.338611, seawardBearing: 240, timeZoneIdentifier: "Europe/Lisbon"),
+        .init(id: "cova-alfarroba", name: "Cova da Alfarroba", region: "Peniche", latitude: 39.360483, longitude: -9.364042, seawardBearing: 330, timeZoneIdentifier: "Europe/Lisbon"),
+        .init(id: "supertubos", name: "Supertubos", region: "Peniche", latitude: 39.345665, longitude: -9.36355, seawardBearing: 230, timeZoneIdentifier: "Europe/Lisbon"),
+        .init(id: "nazare", name: "Praia da Nazaré", region: "Nazaré", latitude: 39.599023, longitude: -9.070031, seawardBearing: 270, timeZoneIdentifier: "Europe/Lisbon")
     ]
 }
 
@@ -31,7 +35,12 @@ enum ForecastClock {
         calendar.timeZone = timeZone
         return calendar
     }
-    static func text(_ date: Date, format: String) -> String {
+    static func calendar(in zone: TimeZone) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        return calendar
+    }
+    static func text(_ date: Date, format: String, timeZone: TimeZone = ForecastClock.timeZone) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_GB")
         formatter.timeZone = timeZone
@@ -65,9 +74,12 @@ struct BeachForecast {
     let fetchedAt: Date
     let marineLatitude: Double
     let marineLongitude: Double
+    var timeZoneIdentifier: String = "Europe/Lisbon"
+    var timeZone: TimeZone { TimeZone(identifier: timeZoneIdentifier) ?? .gmt }
+    var calendar: Calendar { ForecastClock.calendar(in: timeZone) }
 
     func hours(on day: Date) -> [ForecastHour] {
-        hours.filter { ForecastClock.calendar.isDate($0.time, inSameDayAs: day) }
+        hours.filter { calendar.isDate($0.time, inSameDayAs: day) }
     }
 }
 
@@ -77,8 +89,10 @@ struct SurfWindow: Identifiable {
     let end: Date
     let score: Int
     let hours: [ForecastHour]
+    var timeZoneIdentifier: String = "Europe/Lisbon"
     var label: String {
-        "\(ForecastClock.text(start, format: "HH:mm")) – \(ForecastClock.text(end, format: "HH:mm"))"
+        let zone = TimeZone(identifier: timeZoneIdentifier) ?? .gmt
+        return "\(ForecastClock.text(start, format: "HH:mm", timeZone: zone)) – \(ForecastClock.text(end, format: "HH:mm", timeZone: zone))"
     }
 }
 

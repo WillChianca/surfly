@@ -106,7 +106,7 @@ final class ForecastTests: XCTestCase {
             XCTAssertEqual(components.scheme, "https")
             XCTAssertEqual(query["forecast_days"], "7")
             XCTAssertEqual(query["timeformat"], "unixtime")
-            XCTAssertEqual(query["timezone"], "Europe/Lisbon")
+            XCTAssertEqual(query["timezone"], "auto")
             XCTAssertNil(query["apikey"])
         }
     }
@@ -114,5 +114,28 @@ final class ForecastTests: XCTestCase {
     func testLisbonDayBoundariesUseBeachTimezone() {
         let instant = ISO8601DateFormatter().date(from: "2030-06-01T23:30:00Z")!
         XCTAssertEqual(ForecastClock.text(instant, format: "yyyy-MM-dd"), "2030-06-02")
+    }
+
+    func testLessonSnapshotUsesOnlyCoveredHoursAndRejectsStaleForecast() throws {
+        let data = forecast([hour(), hour(offset: 3600), hour(offset: 7200, wave: 1.9)])
+        let snapshot = try XCTUnwrap(LessonForecastSnapshot(forecast: data, start: start,
+                                                          end: start.addingTimeInterval(7200), now: start))
+        XCTAssertFalse(snapshot.summary.contains("waves 1.9 m")) // This sample begins after the lesson ends.
+        XCTAssertNil(LessonForecastSnapshot(forecast: data, start: start, end: start.addingTimeInterval(7200),
+                                             now: start.addingTimeInterval(901)))
+        XCTAssertNil(LessonForecastSnapshot(forecast: data, start: start, end: start.addingTimeInterval(14400), now: start))
+    }
+
+    func testDistantMarineCellIsRejected() {
+        let time = start.timeIntervalSince1970
+        let units = ["wave_height": "m", "wave_period": "s", "wind_speed_10m": "km/h",
+                     "wind_direction_10m": "°", "wind_gusts_10m": "km/h"]
+        let response = OpenMeteoResponse(latitude: 0, longitude: 0, hourly_units: units,
+                                        hourly: ["time": [time]], daily: nil)
+        XCTAssertThrowsError(try OpenMeteoService.merge(marine: response, weather: response, beach: beach)) { error in
+            guard let forecastError = error as? ForecastError, case .inlandLocation = forecastError else {
+                return XCTFail("Expected an unavailable marine location")
+            }
+        }
     }
 }

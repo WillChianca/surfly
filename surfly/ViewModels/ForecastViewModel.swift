@@ -22,9 +22,12 @@ final class ForecastViewModel: ObservableObject {
     private var adviceTask: Task<Void, Never>?
     private var adviceID = UUID()
 
+    var timeZone: TimeZone { forecast?.timeZone ?? beach?.timeZone ?? .current }
+    var calendar: Calendar { ForecastClock.calendar(in: timeZone) }
+
     var days: [Date] {
-        let today = ForecastClock.calendar.startOfDay(for: Date())
-        return (0..<7).compactMap { ForecastClock.calendar.date(byAdding: .day, value: $0, to: today) }
+        let today = calendar.startOfDay(for: Date())
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
     }
 
     var selectedHours: [ForecastHour] { forecast?.hours(on: selectedDay) ?? [] }
@@ -59,10 +62,6 @@ final class ForecastViewModel: ObservableObject {
         }.first
     }
 
-    func chooseNearest(to location: CLLocation) {
-        beach = SurfBeach.catalogue.min { $0.location.distance(from: location) < $1.location.distance(from: location) }
-    }
-
     func load(refresh: Bool = false) async {
         let token = UUID()
         requestID = token
@@ -86,9 +85,20 @@ final class ForecastViewModel: ObservableObject {
             if !days.contains(selectedDay), let first = days.first { selectedDay = first }
             isLoading = false
             isComparing = true
-            let candidates = SurfBeach.catalogue.filter {
-                $0.id != beach.id && $0.location.distance(from: beach.location) <= 25_000
+            let discovered: [SurfBeach]
+            do { discovered = try await BeachDiscoveryService.nearby(beach.location) }
+            catch {
+                guard requestID == token, !Task.isCancelled else { return }
+                discovered = []
+                comparisonError = "Online nearby search is unavailable; checking the regional catalogue where available."
             }
+            guard requestID == token, !Task.isCancelled else { return }
+            var seen = Set<String>()
+            let candidates = (discovered + SurfBeach.catalogue).filter {
+                let key = BeachDiscoveryService.identifier(latitude: $0.latitude, longitude: $0.longitude)
+                return seen.insert(key).inserted && $0.location.distance(from: beach.location) > 100 &&
+                $0.id != beach.id && $0.location.distance(from: beach.location) <= 25_000
+            }.sorted { $0.location.distance(from: beach.location) < $1.location.distance(from: beach.location) }.prefix(4)
             for candidate in candidates {
                 do {
                     let other = try await api.forecast(for: candidate, refresh: refresh)
@@ -122,7 +132,7 @@ final class ForecastViewModel: ObservableObject {
         let options = windows
         let localWindow = options.first
         advice = SurfAdvice(window: localWindow, gear: localWindow.map { ForecastEngine.gear(for: $0.hours) } ?? [], isAI: false)
-        guard !options.isEmpty, !isComparing else { return }
+        guard !options.isEmpty, !isComparing, AppSettings.aiEnabled else { return }
         isAdvising = true
         let comparison = betterSpot.map { "\($0.beach.name) has a higher computed score in the same time window." }
         adviceTask = Task { [weak self] in

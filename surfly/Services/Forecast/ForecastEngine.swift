@@ -9,7 +9,7 @@ enum ForecastEngine {
         let wavePoints: Double = wave < 0.3 ? 35 : wave <= 0.9 ? 100 : max(0, 100 - (wave - 0.9) * 100)
         let windPoints = max(0, 100 - max(0, wind - 5) * 4)
         let periodPoints = max(0, 100 - max(0, period - 9) * 12)
-        let onshore = angularDistance(direction, beach.seawardBearing) < 45
+        let onshore = beach.seawardBearing.map { angularDistance(direction, $0) < 45 } ?? false
         var result = Int((wavePoints * 0.60 + windPoints * 0.25 + periodPoints * 0.15).rounded())
         if onshore && wind > 10 { result -= 10 }
         // Do not let a calm wind offset large/energetic waves or strong offshore wind.
@@ -25,7 +25,11 @@ enum ForecastEngine {
     static func windDescription(_ hour: ForecastHour, beach: SurfBeach) -> String {
         guard let direction = hour.windDirection, let speed = hour.windSpeed else { return "Unavailable" }
         if speed < 5 { return "Light wind" }
-        let difference = angularDistance(direction, beach.seawardBearing)
+        guard let bearing = beach.seawardBearing else {
+            let compass = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+            return "From " + compass[Int((direction / 45).rounded()) % 8]
+        }
+        let difference = angularDistance(direction, bearing)
         return difference < 45 ? "Onshore" : difference > 135 ? "Offshore" : "Cross-shore"
     }
 
@@ -43,7 +47,7 @@ enum ForecastEngine {
     static func windows(in forecast: BeachForecast, day: Date, now: Date = Date()) -> [SurfWindow] {
         let hours = forecast.hours(on: day)
         guard hours.count >= 3 else { return [] }
-        let sunset = forecast.sunsets.first { ForecastClock.calendar.isDate($0, inSameDayAs: day) }
+        let sunset = forecast.sunsets.first { forecast.calendar.isDate($0, inSameDayAs: day) }
         guard let sunset else { return [] }
         return (0..<(hours.count - 2)).compactMap { index -> SurfWindow? in
             let samples = Array(hours[index...(index + 2)])
@@ -53,7 +57,8 @@ enum ForecastEngine {
                   samples[2].time.timeIntervalSince(samples[1].time) == 3600 else { return nil }
             let scores = samples.compactMap { score($0, beach: forecast.beach) }
             guard scores.count == 3, let minimum = scores.min(), minimum >= 60 else { return nil }
-            return SurfWindow(start: samples[0].time, end: samples[2].time, score: minimum, hours: samples)
+            return SurfWindow(start: samples[0].time, end: samples[2].time, score: minimum, hours: samples,
+                              timeZoneIdentifier: forecast.timeZoneIdentifier)
         }.sorted { $0.score == $1.score ? $0.start < $1.start : $0.score > $1.score }
     }
 

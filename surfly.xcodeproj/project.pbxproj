@@ -416,6 +416,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Surfly uses your location to find the closest listed surf beach and calculate its distance.";
+                INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Surfly reads and updates the surf lessons you link to My Schedule. Other events are not added to your history unless you select them for import.";
                 INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Surfly adds the surf lessons and reminders you choose to your calendar.";
                 INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -449,6 +450,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Surfly uses your location to find the closest listed surf beach and calculate its distance.";
+                INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Surfly reads and updates the surf lessons you link to My Schedule. Other events are not added to your history unless you select them for import.";
                 INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Surfly adds the surf lessons and reminders you choose to your calendar.";
                 INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

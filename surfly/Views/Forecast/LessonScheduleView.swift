@@ -1,31 +1,37 @@
 import SwiftUI
 import EventKit
 import CoreLocation
+import SwiftData
 
 struct LessonScheduleView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var calendar: LessonCalendarService
     let beach: SurfBeach
     let advice: SurfAdvice?
-    let forecast: BeachForecast?
+    @State private var forecast: BeachForecast?
+    @State private var forecastError: String?
     let onSaved: () -> Void
     @State private var start: Date
     @State private var end: Date
     @State private var instructor = ""
     @State private var notes = ""
     @State private var includeGear = true
-    @State private var alarmMinutes = 60
+    @State private var alarmMinutes = AppSettings.defaultReminder
+    @State private var syncCalendar = true
     @State private var isSaving = false
     @State private var error: String?
-    @State private var calendarName: String?
-    @State private var store = EKEventStore()
+    @State private var savedLesson: SurfLesson?
+    private var timeZone: TimeZone { forecast?.timeZone ?? beach.timeZone }
 
     init(beach: SurfBeach, day: Date, advice: SurfAdvice?, forecast: BeachForecast?, onSaved: @escaping () -> Void) {
         self.beach = beach
         self.advice = advice
-        self.forecast = forecast
+        _forecast = State(initialValue: forecast)
         self.onSaved = onSaved
         let proposed = advice?.window?.start
-            ?? ForecastClock.calendar.date(bySettingHour: 10, minute: 0, second: 0, of: day) ?? day
+            ?? ForecastClock.calendar(in: forecast?.timeZone ?? beach.timeZone).date(bySettingHour: 10, minute: 0, second: 0, of: day) ?? day
         let start = max(proposed, Date().addingTimeInterval(3600))
         _start = State(initialValue: start)
         _end = State(initialValue: start.addingTimeInterval(7200))
@@ -46,7 +52,7 @@ struct LessonScheduleView: View {
                         Divider().padding(.vertical, 10)
                         DatePicker("Ends", selection: $end, in: start..., displayedComponents: [.date, .hourAndMinute])
                     }.padding(16).background(.white, in: RoundedRectangle(cornerRadius: 16))
-                    Text("All times use the beach timezone: Europe/Lisbon.").font(.caption).foregroundStyle(SurflyTheme.mutedText)
+                    Text("Times in \(timeZone.identifier)").font(.caption).foregroundStyle(SurflyTheme.mutedText)
                     VStack(alignment: .leading, spacing: 14) {
                         Label {
                             VStack(alignment: .leading, spacing: 4) {
@@ -68,7 +74,11 @@ struct LessonScheduleView: View {
                                 .font(.caption).foregroundStyle(SurflyTheme.mutedText)
                         }
                     }
+                    if let forecastError { Text(forecastError).font(.caption).foregroundStyle(SurflyTheme.mutedText) }
+                    Toggle("Add to Apple Calendar", isOn: $syncCalendar)
+                    Text("Your lesson is saved in My Schedule even if Calendar is unavailable.").font(.caption).foregroundStyle(SurflyTheme.mutedText)
                     Picker("Reminder", selection: $alarmMinutes) {
+                        Text("None").tag(-1)
                         Text("At start").tag(0)
                         Text("30 minutes before").tag(30)
                         Text("1 hour before").tag(60)
@@ -78,7 +88,7 @@ struct LessonScheduleView: View {
                         Image(systemName: "calendar").foregroundStyle(SurflyTheme.forecastTeal)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Apple Calendar").font(.subheadline.weight(.semibold))
-                            Text(calendarName ?? "Your default calendar · permission requested on save")
+                            Text(syncCalendar ? "Your default calendar · permission requested on save" : "Calendar export is off · saved in My Schedule")
                                 .font(.caption).foregroundStyle(SurflyTheme.mutedText)
                         }
                     }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -87,7 +97,7 @@ struct LessonScheduleView: View {
                     Button {
                         Task { await save() }
                     } label: {
-                        if isSaving { ProgressView().tint(.white) } else { Text("Save to Calendar") }
+                        if isSaving { ProgressView().tint(.white) } else { Text("Save lesson") }
                     }.buttonStyle(ForecastPrimaryButton()).disabled(isSaving || end <= start)
                 }.padding(20).frame(maxWidth: 620).frame(maxWidth: .infinity)
             }
@@ -102,64 +112,73 @@ struct LessonScheduleView: View {
             .onChange(of: start) { old, new in
                 end = new.addingTimeInterval(max(3600, end.timeIntervalSince(old)))
             }
+            .task(id: beach.id) {
+                if let forecast, Date().timeIntervalSince(forecast.fetchedAt) < 900 { return }
+                do {
+                    let value = try await OpenMeteoService().forecast(for: beach)
+                    guard !Task.isCancelled else { return }
+                    forecast = value
+                } catch {
+                    if !Task.isCancelled { forecastError = "Forecast unavailable. The lesson can still be saved and refreshed later." }
+                }
+            }
         }
-        .environment(\.timeZone, ForecastClock.timeZone)
+        .environment(\.timeZone, timeZone)
+        .interactiveDismissDisabled(isSaving)
         .tint(SurflyTheme.forecastTeal)
         .presentationDragIndicator(.visible)
     }
 
     @MainActor private func save() async {
-        guard !isSaving else { return }
+        guard !isSaving, let owner = auth.userID else { error = "Sign in to save a lesson."; return }
         guard start > Date(), end > start else { error = "Choose a future start and a later end time."; return }
         isSaving = true
         error = nil
         defer { isSaving = false }
-        do {
-            let granted = try await store.requestWriteOnlyAccessToEvents()
-            guard granted else {
-                error = "Calendar access was not granted. Enable it in Settings to save your lesson."
-                return
-            }
-            guard let calendar = store.defaultCalendarForNewEvents, calendar.allowsContentModifications else {
-                error = "No writable default calendar is available. Add a calendar in the Calendar app."
-                return
-            }
-            calendarName = calendar.title
-            let event = EKEvent(eventStore: store)
-            event.calendar = calendar
-            event.title = "Surf lesson · \(beach.name)"
-            event.startDate = start
-            event.endDate = end
-            event.timeZone = ForecastClock.timeZone
-            let place = EKStructuredLocation(title: "\(beach.name), \(beach.region)")
-            place.geoLocation = beach.location
-            event.structuredLocation = place
-            var lines = [notes.trimmingCharacters(in: .whitespacesAndNewlines)]
-            if !instructor.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lines.append("Instructor / school: \(instructor)") }
-            // Never attach the Home's recommendation to an unrelated time chosen in the form.
-            let relevant = forecast?.hours.filter { $0.time >= start && $0.time <= end } ?? []
-            if let forecast, let first = relevant.first, let last = relevant.last,
-               first.time.timeIntervalSince(start) < 3600, end.timeIntervalSince(last.time) < 3600,
-               Date().timeIntervalSince(forecast.fetchedAt) < 900 {
-                lines.append("Open-Meteo forecast retrieved \(ForecastClock.text(forecast.fetchedAt, format: "d MMM yyyy HH:mm")) Europe/Lisbon.")
-                for hour in relevant {
-                    let wave = hour.waveHeight.map { String(format: "%.1f m", $0) } ?? "unavailable"
-                    let wind = hour.windSpeed.map { String(format: "%.0f km/h", $0) } ?? "unavailable"
-                    let water = hour.waterTemperature.map { String(format: "%.1f°C", $0) } ?? "unavailable"
-                    lines.append("\(ForecastClock.text(hour.time, format: "HH:mm")): waves \(wave), wind \(wind), water \(water).")
-                }
-                if includeGear { lines.append("Forecast-based gear suggestions: " + ForecastEngine.gear(for: relevant).map(\.label).joined(separator: ", ")) }
-            } else {
-                lines.append("Forecast and gear checklist unavailable for the selected lesson time. Check again before the lesson.")
-            }
-            lines.append("Model data, not beach observations. Confirm local conditions and equipment with your instructor. https://open-meteo.com/")
-            event.notes = lines.filter { !$0.isEmpty }.joined(separator: "\n\n")
-            event.addAlarm(EKAlarm(relativeOffset: -Double(alarmMinutes * 60)))
-            try store.save(event, span: .thisEvent)
-            dismiss()
-            onSaved()
-        } catch {
-            self.error = "The lesson could not be saved. \(error.localizedDescription)"
+        // If persistence of a Calendar link fails, retry the same record, never create a duplicate.
+        let lesson: SurfLesson
+        if let existing = savedLesson { lesson = existing }
+        else {
+            var resolved = beach
+            resolved.timeZoneIdentifier = timeZone.identifier
+            let snapshot = includeGear ? forecast.flatMap { LessonForecastSnapshot(forecast: $0, start: start, end: end) } : nil
+            lesson = SurfLesson(ownerID: owner, beach: resolved, start: start, end: end, instructor: instructor,
+                                notes: notes, reminderMinutes: alarmMinutes, gear: snapshot?.gear ?? [],
+                                forecastSummary: snapshot?.summary, forecastFetchedAt: snapshot == nil ? nil : forecast?.fetchedAt)
+            context.insert(lesson)
+            do { try context.save(); savedLesson = lesson }
+            catch { context.rollback(); self.error = "Could not save the lesson: \(error.localizedDescription)"; return }
         }
+        if syncCalendar, auth.userID == owner, !lesson.calendarExported {
+            do { try await calendar.export(lesson, ownerID: owner) }
+            catch { lesson.calendarSyncMessage = error.localizedDescription }
+        }
+        do { try context.save() }
+        catch { self.error = "The lesson was saved, but the calendar link could not be stored. Check Apple Calendar before retrying."; return }
+        dismiss()
+        onSaved()
+    }
+}
+
+struct LessonForecastSnapshot {
+    let gear: [GearItem]
+    let summary: String
+
+    init?(forecast: BeachForecast, start: Date, end: Date, now: Date = Date()) {
+        guard end > start, now.timeIntervalSince(forecast.fetchedAt) >= 0,
+              now.timeIntervalSince(forecast.fetchedAt) < 900 else { return nil }
+        let hours = forecast.hours.filter { $0.time < end && $0.time.addingTimeInterval(3600) > start }
+        guard let first = hours.first, let last = hours.last, first.time <= start,
+              last.time.addingTimeInterval(3600) >= end,
+              zip(hours, hours.dropFirst()).allSatisfy({ pair in pair.1.time.timeIntervalSince(pair.0.time) == 3600 }) else { return nil }
+        gear = ForecastEngine.gear(for: hours)
+        let rows = hours.map { hour in
+            let wave = hour.waveHeight.map { String(format: "%.1f m", $0) } ?? "unavailable"
+            let wind = hour.windSpeed.map { String(format: "%.0f km/h", $0) } ?? "unavailable"
+            let water = hour.waterTemperature.map { String(format: "%.1f°C", $0) } ?? "unavailable"
+            return "\(ForecastClock.text(hour.time, format: "d MMM HH:mm", timeZone: forecast.timeZone)): waves \(wave), wind \(wind), water \(water)."
+        }
+        summary = "Open-Meteo model forecast retrieved \(ForecastClock.text(forecast.fetchedAt, format: "d MMM yyyy HH:mm", timeZone: forecast.timeZone)) \(forecast.timeZoneIdentifier).\n"
+            + rows.joined(separator: "\n") + "\nForecast, not a beach observation. Confirm conditions with your instructor. https://open-meteo.com/"
     }
 }

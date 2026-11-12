@@ -1,4 +1,6 @@
 import SwiftUI
+import SwiftData
+import CoreLocation
 
 enum SurflyTab: Int {
     case forecast = 0
@@ -10,19 +12,24 @@ enum SurflyTab: Int {
 
 struct MainTabView: View {
     @StateObject private var authVM = AuthViewModel()
+    @StateObject private var beaches = BeachSelectionStore()
+    @StateObject private var location = BeachLocationService()
+    @StateObject private var calendar = LessonCalendarService()
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("useLocationOnLaunch") private var useLocationOnLaunch = true
     @State private var selectedTab: SurflyTab = .forecast
     
     var body: some View {
         TabView(selection: $selectedTab) {
             // TAB 1: Forecast (Home) - Público
-            ForecastHomeView()
+            ForecastHomeView(onExploreMap: { selectedTab = .map })
                 .tabItem {
                     Label("Forecast", systemImage: "water.waves")
                 }
                 .tag(SurflyTab.forecast)
             
             // TAB 2: Map - Público
-            Text("Explore Beaches Map (Próximo Passo)")
+            ExploreBeachesView(onForecast: { selectedTab = .forecast })
                 .tabItem {
                     Label("Map", systemImage: "map")
                 }
@@ -45,11 +52,11 @@ struct MainTabView: View {
             // TAB 4: Analytics - Requer Autenticação
             AuthGateView(
                 featureTitle: "My Surf Journey",
-                featureDescription: "Inicia sessão para acompanhar a evolução das tuas pontuações de postura, horas na água e histórico de sessões.",
+                featureDescription: "Inicia sessão para acompanhar as aulas realizadas, horas na água e histórico de sessões.",
                 iconName: "chart.bar.xaxis",
                 onLoginRedirectToHome: { selectedTab = .forecast }
             ) {
-                Text("Analytics & Progress")
+                AnalyticsView()
             }
             .tabItem {
                 Label("Analytics", systemImage: "chart.bar.xaxis")
@@ -63,7 +70,7 @@ struct MainTabView: View {
                 iconName: "calendar",
                 onLoginRedirectToHome: { selectedTab = .forecast }
             ) {
-                Text("My Schedule")
+                MyScheduleView()
             }
             .tabItem {
                 Label("Schedule", systemImage: "calendar")
@@ -72,9 +79,38 @@ struct MainTabView: View {
         }
         .tint(SurflyTheme.primaryTeal)
         .environmentObject(authVM)
+        .environmentObject(beaches)
+        .environmentObject(location)
+        .environmentObject(calendar)
+        .preferredColorScheme(.light)
+        .task {
+            guard ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != "1" else { return }
+            if useLocationOnLaunch { beaches.followsLocation = true; location.request() }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                location.recheckPermission()
+                if beaches.followsLocation, location.location == nil, !location.isLocating,
+                   location.authorization == .authorizedWhenInUse || location.authorization == .authorizedAlways { location.request() }
+            }
+        }
+        .task(id: location.fixID) {
+            if beaches.followsLocation, let fix = location.location { await beaches.findNearest(to: fix) }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                location.recheckPermission()
+                calendar.refreshAuthorization()
+                if beaches.followsLocation, location.location == nil, !location.isLocating,
+                   location.authorization == .authorizedWhenInUse || location.authorization == .authorizedAlways { location.request() }
+            }
+        }
+        .onChange(of: authVM.userID) { old, new in
+            if old != nil && new != old { selectedTab = .forecast; calendar.error = nil }
+        }
     }
 }
 
 #Preview {
     MainTabView()
+        .modelContainer(for: SurfLesson.self, inMemory: true)
 }
